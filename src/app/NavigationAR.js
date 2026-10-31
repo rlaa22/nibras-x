@@ -12,33 +12,18 @@ export default function NavigationAR() {
   const [position, setPosition] = useState(null);
   const [locationError, setLocationError] = useState('');
 
-  async function startCamera() {
-    setCameraError('');
+  // ربط بث الكاميرا بالفيديو بعد ظهوره
+  useEffect(() => {
+    if (cameraOn && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-        audio: false
+      videoRef.current.play().catch(() => {
+        setCameraError('اضغطي تشغيل الكاميرا مرة أخرى.');
       });
-
-      streamRef.current = stream;
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-
-      setCameraOn(true);
-    } catch {
-      setCameraError('تعذر تشغيل الكاميرا. تحققي من صلاحيات Safari.');
     }
-  }
+  }, [cameraOn]);
 
-  function stopCamera() {
-    streamRef.current?.getTracks().forEach(track => track.stop());
-    streamRef.current = null;
-    setCameraOn(false);
-  }
-
+  // متابعة GPS
   useEffect(() => {
     if (!navigator.geolocation) {
       setLocationError('جهازك لا يدعم تحديد الموقع.');
@@ -54,12 +39,65 @@ export default function NavigationAR() {
         });
         setLocationError('');
       },
-      () => setLocationError('اسمحي للموقع بالوصول إلى GPS.'),
-      { enableHighAccuracy: true, maximumAge: 3000 }
+      () => {
+        setLocationError('تعذر تحديد الموقع. تحققي من صلاحيات GPS.');
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 3000,
+        timeout: 15000
+      }
     );
 
     return () => {
       navigator.geolocation.clearWatch(watchId);
+    };
+  }, []);
+
+  async function startCamera() {
+    setCameraError('');
+
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('افتحي الموقع من Safari باستخدام HTTPS.');
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      });
+
+      streamRef.current = stream;
+      setCameraOn(true);
+
+    } catch (error) {
+      setCameraError(
+        error.name === 'NotAllowedError'
+          ? 'اسمحي للموقع باستخدام الكاميرا من إعدادات Safari.'
+          : error.message || 'تعذر تشغيل الكاميرا.'
+      );
+    }
+  }
+
+  function stopCamera() {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    setCameraOn(false);
+  }
+
+  useEffect(() => {
+    return () => {
       streamRef.current?.getTracks().forEach(track => track.stop());
     };
   }, []);
@@ -74,6 +112,7 @@ export default function NavigationAR() {
       color: 'white',
       textAlign: 'center'
     }}>
+
       <h2>🧭 الملاحة الذكية إلى مبنى 12</h2>
 
       <p style={{ color: '#b8c9df', margin: '12px 0' }}>
@@ -111,14 +150,23 @@ export default function NavigationAR() {
           position: 'relative',
           marginTop: '18px',
           overflow: 'hidden',
-          borderRadius: '16px'
+          borderRadius: '16px',
+          background: '#050d1c',
+          minHeight: '350px'
         }}>
+
           <video
             ref={videoRef}
             autoPlay
             muted
             playsInline
-            style={{ width: '100%', display: 'block' }}
+            webkit-playsinline="true"
+            style={{
+              width: '100%',
+              height: '450px',
+              display: 'block',
+              objectFit: 'cover'
+            }}
           />
 
           <div style={{
@@ -128,13 +176,18 @@ export default function NavigationAR() {
             right: '15px',
             padding: '16px',
             borderRadius: '14px',
-            background: 'rgba(5, 20, 45, 0.85)',
+            background: 'rgba(5, 20, 45, 0.82)',
             border: '1px solid #65eaff'
           }}>
-            <div style={{ fontSize: '30px', color: '#65eaff' }}>
+            <div style={{
+              fontSize: '38px',
+              color: '#65eaff'
+            }}>
               ↑
             </div>
+
             <strong>المسار قيد التجهيز</strong>
+
             <p style={{ fontSize: '12px', marginTop: '7px' }}>
               سيتم تفعيل تعليمات المنعطفات بعد معايرة طرق الجامعة.
             </p>
@@ -142,7 +195,7 @@ export default function NavigationAR() {
 
           <div style={{
             position: 'absolute',
-            bottom: '15px',
+            bottom: '18px',
             left: '0',
             right: '0',
             color: '#65eaff',
