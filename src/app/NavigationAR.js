@@ -2,6 +2,11 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import {
+  campusMap,
+  findCampusRoute,
+  DESTINATION
+} from '../data/campusRoutes';
 
 export default function NavigationAR() {
   const videoRef = useRef(null);
@@ -12,7 +17,60 @@ export default function NavigationAR() {
   const [position, setPosition] = useState(null);
   const [locationError, setLocationError] = useState('');
 
-  // ربط بث الكاميرا بالفيديو بعد ظهوره
+  // حساب المسار من أقرب نقطة لها إحداثيات معروفة
+  function getNearestNode(userPosition) {
+    if (!userPosition) return null;
+
+    const validNodes = campusMap.nodes.filter(
+      node =>
+        node.lat !== null &&
+        node.lng !== null &&
+        Number.isFinite(node.lat) &&
+        Number.isFinite(node.lng)
+    );
+
+    if (validNodes.length === 0) return null;
+
+    const toRadians = value => value * Math.PI / 180;
+
+    function distance(a, b) {
+      const earthRadius = 6371000;
+
+      const dLat = toRadians(b.lat - a.lat);
+      const dLng = toRadians(b.lng - a.lng);
+
+      const value =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRadians(a.lat)) *
+        Math.cos(toRadians(b.lat)) *
+        Math.sin(dLng / 2) ** 2;
+
+      return 2 * earthRadius *
+        Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
+    }
+
+    return validNodes.reduce((nearest, node) => {
+      const currentDistance = distance(userPosition, node);
+
+      if (!nearest || currentDistance < nearest.distance) {
+        return {
+          id: node.id,
+          name: node.name,
+          distance: currentDistance
+        };
+      }
+
+      return nearest;
+    }, null);
+  }
+
+  const nearestNode = getNearestNode(position);
+
+  const route = nearestNode
+    ? findCampusRoute(nearestNode.id, DESTINATION)
+    : [];
+
+  // ربط بث الكاميرا بالفيديو
   useEffect(() => {
     if (cameraOn && videoRef.current && streamRef.current) {
       videoRef.current.srcObject = streamRef.current;
@@ -37,10 +95,13 @@ export default function NavigationAR() {
           lng: result.coords.longitude,
           accuracy: result.coords.accuracy
         });
+
         setLocationError('');
       },
       () => {
-        setLocationError('تعذر تحديد الموقع. تحققي من صلاحيات GPS.');
+        setLocationError(
+          'تعذر تحديد الموقع. تحققي من صلاحيات GPS.'
+        );
       },
       {
         enableHighAccuracy: true,
@@ -49,9 +110,7 @@ export default function NavigationAR() {
       }
     );
 
-    return () => {
-      navigator.geolocation.clearWatch(watchId);
-    };
+    return () => navigator.geolocation.clearWatch(watchId);
   }, []);
 
   async function startCamera() {
@@ -73,7 +132,6 @@ export default function NavigationAR() {
 
       streamRef.current = stream;
       setCameraOn(true);
-
     } catch (error) {
       setCameraError(
         error.name === 'NotAllowedError'
@@ -126,8 +184,30 @@ export default function NavigationAR() {
       )}
 
       {locationError && (
-        <p style={{ color: '#ff9caa' }}>{locationError}</p>
+        <p style={{ color: '#ff9caa' }}>
+          {locationError}
+        </p>
       )}
+
+      <div style={{
+        padding: '12px',
+        margin: '15px 0',
+        borderRadius: '12px',
+        background: 'rgba(101,234,255,0.08)'
+      }}>
+        {!position ? (
+          <p>بانتظار تحديد موقعك...</p>
+        ) : !nearestNode ? (
+          <p>تم تحديد موقعك، ونحتاج معايرة نقاط مسارات الجامعة.</p>
+        ) : route.length === 0 ? (
+          <p>لا يوجد مسار متصل من موقعك إلى مبنى 12 حاليًا.</p>
+        ) : (
+          <>
+            <p>أقرب نقطة معروفة: {nearestNode.name}</p>
+            <p>المسار التجريبي: {route.join(' ← ')}</p>
+          </>
+        )}
+      </div>
 
       {!cameraOn ? (
         <button className="primary" onClick={startCamera}>
@@ -154,13 +234,11 @@ export default function NavigationAR() {
           background: '#050d1c',
           minHeight: '350px'
         }}>
-
           <video
             ref={videoRef}
             autoPlay
             muted
             playsInline
-            webkit-playsinline="true"
             style={{
               width: '100%',
               height: '450px',
@@ -186,10 +264,16 @@ export default function NavigationAR() {
               ↑
             </div>
 
-            <strong>المسار قيد التجهيز</strong>
+            <strong>
+              {route.length > 0
+                ? 'تم حساب مسار تجريبي'
+                : 'المسار قيد المعايرة'}
+            </strong>
 
             <p style={{ fontSize: '12px', marginTop: '7px' }}>
-              سيتم تفعيل تعليمات المنعطفات بعد معايرة طرق الجامعة.
+              {route.length > 0
+                ? 'المسار غير معتمد للملاحة الفعلية حتى التحقق من الممرات.'
+                : 'سيتم تفعيل التوجيه بعد إضافة إحداثيات ومسارات الجامعة الفعلية.'}
             </p>
           </div>
 
