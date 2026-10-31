@@ -1,118 +1,210 @@
 
 'use client';
 
-import { useState } from 'react';
-import NavigationAR from './NavigationAR';
+import { useEffect, useRef, useState } from 'react';
 
-export default function Home() {
-  const [started, setStarted] = useState(false);
+export default function NavigationAR() {
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+
+  const [cameraOn, setCameraOn] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const [position, setPosition] = useState(null);
+  const [locationError, setLocationError] = useState('');
+
+  // ربط بث الكاميرا بالفيديو بعد ظهوره
+  useEffect(() => {
+    if (cameraOn && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+
+      videoRef.current.play().catch(() => {
+        setCameraError('اضغطي تشغيل الكاميرا مرة أخرى.');
+      });
+    }
+  }, [cameraOn]);
+
+  // متابعة GPS
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setLocationError('جهازك لا يدعم تحديد الموقع.');
+      return;
+    }
+
+    const watchId = navigator.geolocation.watchPosition(
+      result => {
+        setPosition({
+          lat: result.coords.latitude,
+          lng: result.coords.longitude,
+          accuracy: result.coords.accuracy
+        });
+        setLocationError('');
+      },
+      () => {
+        setLocationError('تعذر تحديد الموقع. تحققي من صلاحيات GPS.');
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 3000,
+        timeout: 15000
+      }
+    );
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, []);
+
+  async function startCamera() {
+    setCameraError('');
+
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('افتحي الموقع من Safari باستخدام HTTPS.');
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      });
+
+      streamRef.current = stream;
+      setCameraOn(true);
+
+    } catch (error) {
+      setCameraError(
+        error.name === 'NotAllowedError'
+          ? 'اسمحي للموقع باستخدام الكاميرا من إعدادات Safari.'
+          : error.message || 'تعذر تشغيل الكاميرا.'
+      );
+    }
+  }
+
+  function stopCamera() {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    setCameraOn(false);
+  }
+
+  useEffect(() => {
+    return () => {
+      streamRef.current?.getTracks().forEach(track => track.stop());
+    };
+  }, []);
 
   return (
-    <main className="page">
-      <header className="topbar">
-        <a className="logo" href="#home">
-          <span className="logo-mark">
-            N<span>X</span>
-          </span>
-          <span>
-            <b>NIBRAS X</b>
-            <small>TAIF UNIVERSITY</small>
-          </span>
-        </a>
+    <section style={{
+      maxWidth: '850px',
+      margin: '30px auto',
+      padding: '22px',
+      borderRadius: '20px',
+      background: '#101d35',
+      color: 'white',
+      textAlign: 'center'
+    }}>
 
-        <span className="top-label">
-          A NEW WAY TO DISCOVER
-        </span>
-      </header>
+      <h2>🧭 الملاحة الذكية إلى مبنى 12</h2>
 
-      <section className="hero" id="home">
-        <div className="copy">
-          <div className="eyebrow">
-            <i /> تجربة واقع معزز
-          </div>
+      <p style={{ color: '#b8c9df', margin: '12px 0' }}>
+        حددي موقعك وشغّلي الكاميرا لبدء تجربة NIBRAS X.
+      </p>
 
-          <h1>
-            مرحبًا بكِ في
-            <br />
-            <em>مبنى 12</em>
-          </h1>
-
-          <p>
-            بوابتك الرقمية لاكتشاف مبنى كلية الحاسبات وتقنية المعلومات
-            بجامعة الطائف، بتجربة تفاعلية تجمع الواقع بالتقنية.
-          </p>
-
-          <button
-            className="primary"
-            onClick={() => setStarted(true)}
-          >
-            {started ? 'التجربة جاهزة' : 'ابدئي التجربة'}
-            <span>↗</span>
-          </button>
-
-          <div className="meta">
-            <span>⌖</span>
-            كلية الحاسبات وتقنية المعلومات · جامعة الطائف
-          </div>
-        </div>
-
-        <div className="visual">
-          <div className="photo-frame">
-            <img
-              src="/building-12.jpeg"
-              alt="واجهة مبنى 12، كلية الحاسبات"
-            />
-
-            <div className="photo-shade" />
-
-            <div className="photo-caption">
-              <b>12</b>
-              <span>COLLEGE OF COMPUTERS</span>
-            </div>
-
-            <div className="scan-line" />
-          </div>
-
-          <div className="float-chip chip-a">
-            <i /> BUILDING 12
-          </div>
-
-          <div className="float-chip chip-b">
-            AR READY <span>✦</span>
-          </div>
-
-          <div className="ring ring-a" />
-          <div className="ring ring-b" />
-        </div>
-      </section>
-
-      {started && (
-        <>
-          <section className="welcome" aria-live="polite">
-            <div className="camera-icon">◎</div>
-
-            <div>
-              <h2>أهلًا بكِ في NIBRAS X</h2>
-              <p>رحلتكِ إلى مبنى 12 تبدأ الآن.</p>
-            </div>
-
-            <button
-              className="close"
-              onClick={() => setStarted(false)}
-              aria-label="إغلاق التجربة"
-            >
-              ×
-            </button>
-          </section>
-
-          <NavigationAR />
-        </>
+      {position && (
+        <p style={{ color: '#65eaff', fontSize: '13px' }}>
+          GPS متصل · دقة الموقع ±{Math.round(position.accuracy)} متر
+        </p>
       )}
 
-      <footer>
-        <span>NIBRAS X © 2026</span>
-        <span>TAIF UNIVERSITY</span>
-      </footer>
-    </main>
+      {locationError && (
+        <p style={{ color: '#ff9caa' }}>{locationError}</p>
+      )}
+
+      {!cameraOn ? (
+        <button className="primary" onClick={startCamera}>
+          تشغيل كاميرا الملاحة
+        </button>
+      ) : (
+        <button className="primary" onClick={stopCamera}>
+          إيقاف الكاميرا
+        </button>
+      )}
+
+      {cameraError && (
+        <p style={{ color: '#ff9caa', marginTop: '12px' }}>
+          {cameraError}
+        </p>
+      )}
+
+      {cameraOn && (
+        <div style={{
+          position: 'relative',
+          marginTop: '18px',
+          overflow: 'hidden',
+          borderRadius: '16px',
+          background: '#050d1c',
+          minHeight: '350px'
+        }}>
+
+          <video
+            ref={videoRef}
+            autoPlay
+            muted
+            playsInline
+            webkit-playsinline="true"
+            style={{
+              width: '100%',
+              height: '450px',
+              display: 'block',
+              objectFit: 'cover'
+            }}
+          />
+
+          <div style={{
+            position: 'absolute',
+            top: '15px',
+            left: '15px',
+            right: '15px',
+            padding: '16px',
+            borderRadius: '14px',
+            background: 'rgba(5, 20, 45, 0.82)',
+            border: '1px solid #65eaff'
+          }}>
+            <div style={{
+              fontSize: '38px',
+              color: '#65eaff'
+            }}>
+              ↑
+            </div>
+
+            <strong>المسار قيد التجهيز</strong>
+
+            <p style={{ fontSize: '12px', marginTop: '7px' }}>
+              سيتم تفعيل تعليمات المنعطفات بعد معايرة طرق الجامعة.
+            </p>
+          </div>
+
+          <div style={{
+            position: 'absolute',
+            bottom: '18px',
+            left: '0',
+            right: '0',
+            color: '#65eaff',
+            fontWeight: 'bold'
+          }}>
+            NIBRAS X · BUILDING 12
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
