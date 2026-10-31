@@ -1,8 +1,8 @@
 
- // NIBRAS X - محرك المسارات الداخلي
- // لا يعتمد على أي خدمة خرائط خارجية.
-
 export const DESTINATION = "building12";
+
+// شبكة مبدئية للممرات حول مبنى 12
+// الإحداثيات غير محددة حتى نتحقق منها ميدانيًا.
 
 export const campusMap = {
   nodes: [
@@ -10,129 +10,114 @@ export const campusMap = {
       id: "building12",
       name: "مدخل مبنى 12",
       lat: null,
-      lng: null
+      lng: null,
+      type: "destination"
+    },
+    {
+      id: "junction1",
+      name: "تقاطع شمالي",
+      lat: null,
+      lng: null,
+      type: "junction"
+    },
+    {
+      id: "junction2",
+      name: "تقاطع شرقي",
+      lat: null,
+      lng: null,
+      type: "junction"
+    },
+    {
+      id: "junction3",
+      name: "تقاطع جنوبي",
+      lat: null,
+      lng: null,
+      type: "junction"
+    },
+    {
+      id: "junction4",
+      name: "تقاطع غربي",
+      lat: null,
+      lng: null,
+      type: "junction"
     }
   ],
 
-  edges: []
+  edges: [
+    { from: "junction1", to: "junction2", distanceMeters: 30 },
+    { from: "junction2", to: "building12", distanceMeters: 20 },
+    { from: "junction3", to: "junction2", distanceMeters: 35 },
+    { from: "junction4", to: "junction1", distanceMeters: 40 },
+    { from: "junction4", to: "junction3", distanceMeters: 45 }
+  ]
 };
 
-// حساب المسافة بين نقطتين بالمتر
-export function getDistance(lat1, lng1, lat2, lng2) {
-  const R = 6371000;
-  const rad = value => value * Math.PI / 180;
-
-  const dLat = rad(lat2 - lat1);
-  const dLng = rad(lng2 - lng1);
-
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(rad(lat1)) *
-    Math.cos(rad(lat2)) *
-    Math.sin(dLng / 2) ** 2;
-
-  return 2 * R * Math.atan2(
-    Math.sqrt(a),
-    Math.sqrt(1 - a)
-  );
-}
-
-// إيجاد أقرب نقطة طريق لموقع الطالبة
-export function findNearestNode(lat, lng) {
-  const availableNodes = campusMap.nodes.filter(
-    node => Number.isFinite(node.lat) &&
-            Number.isFinite(node.lng)
-  );
-
-  if (!availableNodes.length) return null;
-
-  return availableNodes.reduce((nearest, node) => {
-    const distance = getDistance(
-      lat, lng, node.lat, node.lng
-    );
-
-    return !nearest || distance < nearest.distance
-      ? { ...node, distance }
-      : nearest;
-  }, null);
-}
-
-// حساب أقصر مسار باستخدام خوارزمية Dijkstra
-export function findCampusRoute(startId, destinationId) {
+export function findCampusRoute(startId, destinationId = DESTINATION) {
   const distances = {};
   const previous = {};
-  const visited = new Set();
+  const unvisited = new Set(campusMap.nodes.map(node => node.id));
 
   campusMap.nodes.forEach(node => {
     distances[node.id] = Infinity;
   });
 
-  if (!(startId in distances) ||
-      !(destinationId in distances)) {
-    return null;
+  if (!unvisited.has(startId) || !unvisited.has(destinationId)) {
+    return [];
   }
 
   distances[startId] = 0;
 
-  while (true) {
+  while (unvisited.size > 0) {
     let current = null;
 
-    for (const id of Object.keys(distances)) {
-      if (!visited.has(id) &&
-          (current === null ||
-           distances[id] < distances[current])) {
+    for (const id of unvisited) {
+      if (
+        current === null ||
+        distances[id] < distances[current]
+      ) {
         current = id;
       }
     }
 
-    if (current === null ||
-        distances[current] === Infinity) break;
+    if (current === null || distances[current] === Infinity) {
+      break;
+    }
 
-    if (current === destinationId) break;
+    if (current === destinationId) {
+      break;
+    }
 
-    visited.add(current);
+    unvisited.delete(current);
 
-    const connections = campusMap.edges.filter(
-      edge => edge.from === current
-    );
+    for (const edge of campusMap.edges) {
+      let neighbor = null;
 
-    for (const edge of connections) {
-      const nextDistance =
+      if (edge.from === current) neighbor = edge.to;
+      if (edge.to === current) neighbor = edge.from;
+
+      if (!neighbor || !unvisited.has(neighbor)) continue;
+
+      const alternative =
         distances[current] + edge.distanceMeters;
 
-      if (nextDistance < distances[edge.to]) {
-        distances[edge.to] = nextDistance;
-        previous[edge.to] = {
-          id: current,
-          instruction: edge.instruction
-        };
+      if (alternative < distances[neighbor]) {
+        distances[neighbor] = alternative;
+        previous[neighbor] = current;
       }
     }
   }
 
   if (distances[destinationId] === Infinity) {
-    return null;
+    return [];
   }
 
-  const steps = [];
+  const route = [];
   let current = destinationId;
 
-  while (current !== startId) {
-    const previousStep = previous[current];
-
-    if (!previousStep) return null;
-
-    steps.unshift({
-      from: previousStep.id,
-      to: current,
-      instruction: previousStep.instruction
-    });
-
-    current = previousStep.id;
+  while (current) {
+    route.unshift(current);
+    current = previous[current];
   }
 
-  return {
-    distanceMeters: distances[destinationId],
-    steps
-  };
+  return route;
 }
