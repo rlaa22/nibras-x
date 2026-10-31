@@ -2,6 +2,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+
 import {
   campusMap,
   DESTINATION,
@@ -17,28 +18,57 @@ export default function NavigationAR() {
   const [cameraError, setCameraError] = useState('');
   const [position, setPosition] = useState(null);
   const [locationError, setLocationError] = useState('');
+  const [directionIndex, setDirectionIndex] = useState(0);
 
+  // اتجاهات تجريبية للعرض
+  const demoDirections = [
+    { arrow: '⬆️', text: 'واصلي للأمام' },
+    { arrow: '➡️', text: 'اتجهي يمينًا' },
+    { arrow: '⬆️', text: 'واصلي للأمام' },
+    { arrow: '⬅️', text: 'اتجهي يسارًا' },
+    { arrow: '⬆️', text: 'واصلي للأمام' },
+    { arrow: '↩️', text: 'استعدّي للوصول' }
+  ];
+
+  // تحديد الوجهة
   const destination = campusMap.nodes.find(
     node => node.id === DESTINATION
   );
 
-  const remainingDistance = position && destination
-    ? getDistance(
-        position.lat,
-        position.lng,
-        destination.lat,
-        destination.lng
-      )
-    : null;
+  // حساب المسافة المباشرة من GPS
+  const remainingDistance =
+    position && destination
+      ? getDistance(
+          position.lat,
+          position.lng,
+          destination.lat,
+          destination.lng
+        )
+      : null;
 
-  const arrived = remainingDistance !== null &&
+  const arrived =
+    remainingDistance !== null &&
     remainingDistance <= 15;
 
-  const walkingTime = remainingDistance !== null
-    ? getWalkingTime(remainingDistance)
-    : null;
+  const walkingTime =
+    remainingDistance !== null
+      ? getWalkingTime(remainingDistance)
+      : null;
 
-  // متابعة الموقع باستمرار
+  // تغيير الاتجاه كل 4 ثوانٍ
+  useEffect(() => {
+    if (!cameraOn || arrived) return;
+
+    const timer = setInterval(() => {
+      setDirectionIndex(current =>
+        (current + 1) % demoDirections.length
+      );
+    }, 4000);
+
+    return () => clearInterval(timer);
+  }, [cameraOn, arrived]);
+
+  // متابعة GPS
   useEffect(() => {
     if (!navigator.geolocation) {
       setLocationError('جهازك لا يدعم تحديد الموقع.');
@@ -52,11 +82,12 @@ export default function NavigationAR() {
           lng: result.coords.longitude,
           accuracy: result.coords.accuracy
         });
+
         setLocationError('');
       },
       () => {
         setLocationError(
-          'تعذر تحديد موقعك. تحققي من صلاحيات الموقع.'
+          'تعذر تحديد موقعك. تحققي من صلاحيات GPS.'
         );
       },
       {
@@ -74,14 +105,15 @@ export default function NavigationAR() {
     setCameraError('');
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: 'environment' },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        },
-        audio: false
-      });
+      const stream =
+        await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        });
 
       streamRef.current = stream;
       setCameraOn(true);
@@ -92,6 +124,7 @@ export default function NavigationAR() {
           videoRef.current.play().catch(() => {});
         }
       }, 100);
+
     } catch (error) {
       setCameraError(
         error.name === 'NotAllowedError'
@@ -101,34 +134,45 @@ export default function NavigationAR() {
     }
   }
 
+  // إيقاف الكاميرا
   function stopCamera() {
-    streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current?.getTracks().forEach(
+      track => track.stop()
+    );
+
     streamRef.current = null;
     setCameraOn(false);
   }
 
+  // تنظيف الكاميرا عند مغادرة الصفحة
   useEffect(() => {
     return () => {
-      streamRef.current?.getTracks().forEach(track => track.stop());
+      streamRef.current?.getTracks().forEach(
+        track => track.stop()
+      );
     };
   }, []);
 
   return (
-    <section style={{
-      maxWidth: '850px',
-      margin: '30px auto',
-      padding: '22px',
-      borderRadius: '20px',
-      background: '#101d35',
-      color: 'white',
-      textAlign: 'center'
-    }}>
+    <section
+      style={{
+        maxWidth: '850px',
+        margin: '30px auto',
+        padding: '22px',
+        borderRadius: '20px',
+        background: '#101d35',
+        color: 'white',
+        textAlign: 'center'
+      }}
+    >
 
       <h2>🧭 الملاحة إلى مبنى 12</h2>
 
       <p style={{ color: '#b8c9df' }}>
         NIBRAS X · كلية الحاسبات وتقنية المعلومات
       </p>
+
+      {/* حالة الموقع */}
 
       {locationError && (
         <p style={{ color: '#ff9caa' }}>
@@ -142,22 +186,32 @@ export default function NavigationAR() {
         </p>
       )}
 
+      {/* المسافة والوقت */}
+
       {position && remainingDistance !== null && (
-        <div style={{
-          background: 'rgba(101,234,255,0.09)',
-          border: '1px solid #65eaff',
-          borderRadius: '16px',
-          padding: '20px',
-          margin: '18px 0'
-        }}>
+        <div
+          style={{
+            background: 'rgba(101,234,255,0.09)',
+            border: '1px solid #65eaff',
+            borderRadius: '16px',
+            padding: '20px',
+            margin: '18px 0'
+          }}
+        >
 
           {arrived ? (
             <>
-              <div style={{ fontSize: '42px' }}>🎉</div>
+              <div style={{ fontSize: '42px' }}>
+                🎉
+              </div>
+
               <h2 style={{ color: '#65eaff' }}>
                 وصلتِ إلى مبنى 12 بنجاح!
               </h2>
-              <p>أنتِ الآن بالقرب من مدخل الوجهة.</p>
+
+              <p>
+                أنتِ الآن بالقرب من مدخل الوجهة.
+              </p>
             </>
           ) : (
             <>
@@ -165,11 +219,13 @@ export default function NavigationAR() {
                 المسافة المتبقية
               </h3>
 
-              <div style={{
-                fontSize: '42px',
-                fontWeight: 'bold',
-                margin: '10px'
-              }}>
+              <div
+                style={{
+                  fontSize: '42px',
+                  fontWeight: 'bold',
+                  margin: '10px'
+                }}
+              >
                 {Math.round(remainingDistance)} متر
               </div>
 
@@ -177,8 +233,14 @@ export default function NavigationAR() {
                 الوقت التقريبي: {walkingTime} دقيقة
               </p>
 
-              <p style={{ fontSize: '13px', color: '#b8c9df' }}>
-                دقة GPS الحالية: ±{Math.round(position.accuracy)} متر
+              <p
+                style={{
+                  fontSize: '13px',
+                  color: '#b8c9df'
+                }}
+              >
+                دقة GPS الحالية: ±
+                {Math.round(position.accuracy)} متر
               </p>
 
               {remainingDistance <= 50 && (
@@ -191,24 +253,36 @@ export default function NavigationAR() {
         </div>
       )}
 
-      <button className="primary" onClick={
-        cameraOn ? stopCamera : startCamera
-      }>
-        {cameraOn ? 'إيقاف الكاميرا' : 'تشغيل كاميرا الملاحة'}
+      {/* زر الكاميرا */}
+
+      <button
+        className="primary"
+        onClick={cameraOn ? stopCamera : startCamera}
+      >
+        {cameraOn
+          ? 'إيقاف الكاميرا'
+          : 'تشغيل كاميرا الملاحة'}
       </button>
 
       {cameraError && (
-        <p style={{ color: '#ff9caa' }}>{cameraError}</p>
+        <p style={{ color: '#ff9caa' }}>
+          {cameraError}
+        </p>
       )}
 
+      {/* واجهة الكاميرا */}
+
       {cameraOn && (
-        <div style={{
-          position: 'relative',
-          marginTop: '18px',
-          overflow: 'hidden',
-          borderRadius: '16px',
-          background: '#050d1c'
-        }}>
+        <div
+          style={{
+            position: 'relative',
+            marginTop: '18px',
+            overflow: 'hidden',
+            borderRadius: '16px',
+            background: '#050d1c'
+          }}
+        >
+
           <video
             ref={videoRef}
             autoPlay
@@ -222,33 +296,49 @@ export default function NavigationAR() {
             }}
           />
 
-          <div style={{
-            position: 'absolute',
-            top: '15px',
-            left: '15px',
-            right: '15px',
-            padding: '18px',
-            borderRadius: '14px',
-            background: 'rgba(5,20,45,0.85)',
-            border: '1px solid #65eaff'
-          }}>
+          {/* لوحة الاتجاهات */}
+
+          <div
+            style={{
+              position: 'absolute',
+              top: '15px',
+              left: '15px',
+              right: '15px',
+              padding: '18px',
+              borderRadius: '14px',
+              background: 'rgba(5,20,45,0.88)',
+              border: '1px solid #65eaff'
+            }}
+          >
+
             {arrived ? (
               <>
-                <div style={{ fontSize: '38px' }}>🎉</div>
-                <strong>وصلتِ إلى مبنى 12!</strong>
+                <div style={{ fontSize: '42px' }}>
+                  🎉
+                </div>
+
+                <strong style={{ fontSize: '22px' }}>
+                  وصلتِ إلى مبنى 12!
+                </strong>
               </>
             ) : remainingDistance !== null ? (
               <>
-                <div style={{
-                  fontSize: '38px',
-                  color: '#65eaff'
-                }}>
-                  ↑
+                <div
+                  style={{
+                    fontSize: '55px',
+                    color: '#65eaff',
+                    transition: 'all 0.5s ease',
+                    marginBottom: '8px'
+                  }}
+                >
+                  {demoDirections[directionIndex].arrow}
                 </div>
 
-                <strong>اتجهي نحو مدخل مبنى 12</strong>
+                <strong style={{ fontSize: '22px' }}>
+                  {demoDirections[directionIndex].text}
+                </strong>
 
-                <p style={{ marginTop: '8px' }}>
+                <p style={{ marginTop: '12px' }}>
                   متبقي {Math.round(remainingDistance)} متر
                 </p>
 
@@ -257,30 +347,40 @@ export default function NavigationAR() {
                 </p>
               </>
             ) : (
-              <strong>بانتظار تحديد موقعك...</strong>
+              <strong>
+                بانتظار تحديد موقعك...
+              </strong>
             )}
+
           </div>
 
-          <div style={{
-            position: 'absolute',
-            bottom: '18px',
-            left: '0',
-            right: '0',
-            color: '#65eaff',
-            fontWeight: 'bold'
-          }}>
+          {/* اسم المشروع */}
+
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '18px',
+              left: '0',
+              right: '0',
+              color: '#65eaff',
+              fontWeight: 'bold'
+            }}
+          >
             NIBRAS X · BUILDING 12
           </div>
+
         </div>
       )}
 
-      <p style={{
-        color: '#b8c9df',
-        fontSize: '12px',
-        marginTop: '16px'
-      }}>
-        المسافة والوقت تقدير مباشر من GPS، وقد يتأثران بدقة الموقع
-        ومسار المشاة الفعلي.
+      <p
+        style={{
+          color: '#b8c9df',
+          fontSize: '12px',
+          marginTop: '16px'
+        }}
+      >
+        المسافة والوقت تقدير مباشر من GPS.
+        الاتجاهات المتحركة محاكاة تجريبية وليست توجيهًا فعليًا.
       </p>
 
     </section>
