@@ -4,8 +4,9 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   campusMap,
-  findCampusRoute,
-  DESTINATION
+  DESTINATION,
+  getDistance,
+  getWalkingTime
 } from '../data/campusRoutes';
 
 export default function NavigationAR() {
@@ -17,71 +18,27 @@ export default function NavigationAR() {
   const [position, setPosition] = useState(null);
   const [locationError, setLocationError] = useState('');
 
-  // حساب المسار من أقرب نقطة لها إحداثيات معروفة
-  function getNearestNode(userPosition) {
-    if (!userPosition) return null;
+  const destination = campusMap.nodes.find(
+    node => node.id === DESTINATION
+  );
 
-    const validNodes = campusMap.nodes.filter(
-      node =>
-        node.lat !== null &&
-        node.lng !== null &&
-        Number.isFinite(node.lat) &&
-        Number.isFinite(node.lng)
-    );
+  const remainingDistance = position && destination
+    ? getDistance(
+        position.lat,
+        position.lng,
+        destination.lat,
+        destination.lng
+      )
+    : null;
 
-    if (validNodes.length === 0) return null;
+  const arrived = remainingDistance !== null &&
+    remainingDistance <= 15;
 
-    const toRadians = value => value * Math.PI / 180;
+  const walkingTime = remainingDistance !== null
+    ? getWalkingTime(remainingDistance)
+    : null;
 
-    function distance(a, b) {
-      const earthRadius = 6371000;
-
-      const dLat = toRadians(b.lat - a.lat);
-      const dLng = toRadians(b.lng - a.lng);
-
-      const value =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos(toRadians(a.lat)) *
-        Math.cos(toRadians(b.lat)) *
-        Math.sin(dLng / 2) ** 2;
-
-      return 2 * earthRadius *
-        Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
-    }
-
-    return validNodes.reduce((nearest, node) => {
-      const currentDistance = distance(userPosition, node);
-
-      if (!nearest || currentDistance < nearest.distance) {
-        return {
-          id: node.id,
-          name: node.name,
-          distance: currentDistance
-        };
-      }
-
-      return nearest;
-    }, null);
-  }
-
-  const nearestNode = getNearestNode(position);
-
-  const route = nearestNode
-    ? findCampusRoute(nearestNode.id, DESTINATION)
-    : [];
-
-  // ربط بث الكاميرا بالفيديو
-  useEffect(() => {
-    if (cameraOn && videoRef.current && streamRef.current) {
-      videoRef.current.srcObject = streamRef.current;
-
-      videoRef.current.play().catch(() => {
-        setCameraError('اضغطي تشغيل الكاميرا مرة أخرى.');
-      });
-    }
-  }, [cameraOn]);
-
-  // متابعة GPS
+  // متابعة الموقع باستمرار
   useEffect(() => {
     if (!navigator.geolocation) {
       setLocationError('جهازك لا يدعم تحديد الموقع.');
@@ -95,32 +52,28 @@ export default function NavigationAR() {
           lng: result.coords.longitude,
           accuracy: result.coords.accuracy
         });
-
         setLocationError('');
       },
       () => {
         setLocationError(
-          'تعذر تحديد الموقع. تحققي من صلاحيات GPS.'
+          'تعذر تحديد موقعك. تحققي من صلاحيات الموقع.'
         );
       },
       {
         enableHighAccuracy: true,
-        maximumAge: 3000,
-        timeout: 15000
+        maximumAge: 2000,
+        timeout: 20000
       }
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
   }, []);
 
+  // تشغيل الكاميرا
   async function startCamera() {
     setCameraError('');
 
     try {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error('افتحي الموقع من Safari باستخدام HTTPS.');
-      }
-
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: 'environment' },
@@ -132,25 +85,25 @@ export default function NavigationAR() {
 
       streamRef.current = stream;
       setCameraOn(true);
+
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+      }, 100);
     } catch (error) {
       setCameraError(
         error.name === 'NotAllowedError'
           ? 'اسمحي للموقع باستخدام الكاميرا من إعدادات Safari.'
-          : error.message || 'تعذر تشغيل الكاميرا.'
+          : 'تعذر تشغيل الكاميرا. حاولي مرة أخرى.'
       );
     }
   }
 
   function stopCamera() {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-
+    streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current = null;
     setCameraOn(false);
   }
 
@@ -171,17 +124,11 @@ export default function NavigationAR() {
       textAlign: 'center'
     }}>
 
-      <h2>🧭 الملاحة الذكية إلى مبنى 12</h2>
+      <h2>🧭 الملاحة إلى مبنى 12</h2>
 
-      <p style={{ color: '#b8c9df', margin: '12px 0' }}>
-        حددي موقعك وشغّلي الكاميرا لبدء تجربة NIBRAS X.
+      <p style={{ color: '#b8c9df' }}>
+        NIBRAS X · كلية الحاسبات وتقنية المعلومات
       </p>
-
-      {position && (
-        <p style={{ color: '#65eaff', fontSize: '13px' }}>
-          GPS متصل · دقة الموقع ±{Math.round(position.accuracy)} متر
-        </p>
-      )}
 
       {locationError && (
         <p style={{ color: '#ff9caa' }}>
@@ -189,40 +136,69 @@ export default function NavigationAR() {
         </p>
       )}
 
-      <div style={{
-        padding: '12px',
-        margin: '15px 0',
-        borderRadius: '12px',
-        background: 'rgba(101,234,255,0.08)'
-      }}>
-        {!position ? (
-          <p>بانتظار تحديد موقعك...</p>
-        ) : !nearestNode ? (
-          <p>تم تحديد موقعك، ونحتاج معايرة نقاط مسارات الجامعة.</p>
-        ) : route.length === 0 ? (
-          <p>لا يوجد مسار متصل من موقعك إلى مبنى 12 حاليًا.</p>
-        ) : (
-          <>
-            <p>أقرب نقطة معروفة: {nearestNode.name}</p>
-            <p>المسار التجريبي: {route.join(' ← ')}</p>
-          </>
-        )}
-      </div>
-
-      {!cameraOn ? (
-        <button className="primary" onClick={startCamera}>
-          تشغيل كاميرا الملاحة
-        </button>
-      ) : (
-        <button className="primary" onClick={stopCamera}>
-          إيقاف الكاميرا
-        </button>
+      {!position && (
+        <p style={{ color: '#65eaff' }}>
+          جارٍ تحديد موقعك...
+        </p>
       )}
 
+      {position && remainingDistance !== null && (
+        <div style={{
+          background: 'rgba(101,234,255,0.09)',
+          border: '1px solid #65eaff',
+          borderRadius: '16px',
+          padding: '20px',
+          margin: '18px 0'
+        }}>
+
+          {arrived ? (
+            <>
+              <div style={{ fontSize: '42px' }}>🎉</div>
+              <h2 style={{ color: '#65eaff' }}>
+                وصلتِ إلى مبنى 12 بنجاح!
+              </h2>
+              <p>أنتِ الآن بالقرب من مدخل الوجهة.</p>
+            </>
+          ) : (
+            <>
+              <h3 style={{ color: '#65eaff' }}>
+                المسافة المتبقية
+              </h3>
+
+              <div style={{
+                fontSize: '42px',
+                fontWeight: 'bold',
+                margin: '10px'
+              }}>
+                {Math.round(remainingDistance)} متر
+              </div>
+
+              <p>
+                الوقت التقريبي: {walkingTime} دقيقة
+              </p>
+
+              <p style={{ fontSize: '13px', color: '#b8c9df' }}>
+                دقة GPS الحالية: ±{Math.round(position.accuracy)} متر
+              </p>
+
+              {remainingDistance <= 50 && (
+                <h3 style={{ color: '#65eaff' }}>
+                  اقتربتِ من الوجهة!
+                </h3>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      <button className="primary" onClick={
+        cameraOn ? stopCamera : startCamera
+      }>
+        {cameraOn ? 'إيقاف الكاميرا' : 'تشغيل كاميرا الملاحة'}
+      </button>
+
       {cameraError && (
-        <p style={{ color: '#ff9caa', marginTop: '12px' }}>
-          {cameraError}
-        </p>
+        <p style={{ color: '#ff9caa' }}>{cameraError}</p>
       )}
 
       {cameraOn && (
@@ -231,8 +207,7 @@ export default function NavigationAR() {
           marginTop: '18px',
           overflow: 'hidden',
           borderRadius: '16px',
-          background: '#050d1c',
-          minHeight: '350px'
+          background: '#050d1c'
         }}>
           <video
             ref={videoRef}
@@ -242,8 +217,8 @@ export default function NavigationAR() {
             style={{
               width: '100%',
               height: '450px',
-              display: 'block',
-              objectFit: 'cover'
+              objectFit: 'cover',
+              display: 'block'
             }}
           />
 
@@ -252,29 +227,38 @@ export default function NavigationAR() {
             top: '15px',
             left: '15px',
             right: '15px',
-            padding: '16px',
+            padding: '18px',
             borderRadius: '14px',
-            background: 'rgba(5, 20, 45, 0.82)',
+            background: 'rgba(5,20,45,0.85)',
             border: '1px solid #65eaff'
           }}>
-            <div style={{
-              fontSize: '38px',
-              color: '#65eaff'
-            }}>
-              ↑
-            </div>
+            {arrived ? (
+              <>
+                <div style={{ fontSize: '38px' }}>🎉</div>
+                <strong>وصلتِ إلى مبنى 12!</strong>
+              </>
+            ) : remainingDistance !== null ? (
+              <>
+                <div style={{
+                  fontSize: '38px',
+                  color: '#65eaff'
+                }}>
+                  ↑
+                </div>
 
-            <strong>
-              {route.length > 0
-                ? 'تم حساب مسار تجريبي'
-                : 'المسار قيد المعايرة'}
-            </strong>
+                <strong>اتجهي نحو مدخل مبنى 12</strong>
 
-            <p style={{ fontSize: '12px', marginTop: '7px' }}>
-              {route.length > 0
-                ? 'المسار غير معتمد للملاحة الفعلية حتى التحقق من الممرات.'
-                : 'سيتم تفعيل التوجيه بعد إضافة إحداثيات ومسارات الجامعة الفعلية.'}
-            </p>
+                <p style={{ marginTop: '8px' }}>
+                  متبقي {Math.round(remainingDistance)} متر
+                </p>
+
+                <p>
+                  الوقت التقريبي {walkingTime} دقيقة
+                </p>
+              </>
+            ) : (
+              <strong>بانتظار تحديد موقعك...</strong>
+            )}
           </div>
 
           <div style={{
@@ -289,6 +273,16 @@ export default function NavigationAR() {
           </div>
         </div>
       )}
+
+      <p style={{
+        color: '#b8c9df',
+        fontSize: '12px',
+        marginTop: '16px'
+      }}>
+        المسافة والوقت تقدير مباشر من GPS، وقد يتأثران بدقة الموقع
+        ومسار المشاة الفعلي.
+      </p>
+
     </section>
   );
 }
